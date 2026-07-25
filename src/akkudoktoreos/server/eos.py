@@ -51,7 +51,7 @@ from akkudoktoreos.devices.devices import ResourceKey
 from akkudoktoreos.optimization.genetic.geneticparams import (
     GeneticOptimizationParameters,
 )
-from akkudoktoreos.optimization.genetic.geneticsolution import GeneticSolution
+from akkudoktoreos.optimization.simulation.solution import SimulationSolution
 from akkudoktoreos.optimization.optimization import OptimizationSolution
 from akkudoktoreos.prediction.elecprice import ElecPriceCommonSettings
 from akkudoktoreos.prediction.load import LoadCommonSettings
@@ -1465,7 +1465,7 @@ async def fastapi_optimize(
     ngen: Annotated[
         Optional[int], Query(description="Number of indivuals to generate for genetic algorithm.")
     ] = None,
-) -> GeneticSolution:
+) -> SimulationSolution:
     """Deprecated: Optimize.
 
     Endpoint to handle optimization.

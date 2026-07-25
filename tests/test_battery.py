@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from akkudoktoreos.devices.genetic.battery import Battery, SolarPanelBatteryParameters
+from akkudoktoreos.optimization.simulation.parameters import SolarPanelBatteryParameters
+from akkudoktoreos.optimization.simulation.devices import Battery
 
 
 @pytest.fixture

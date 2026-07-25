@@ -12,7 +12,7 @@ from akkudoktoreos.optimization.genetic.genetic import GeneticOptimization
 from akkudoktoreos.optimization.genetic.geneticparams import (
     GeneticOptimizationParameters,
 )
-from akkudoktoreos.optimization.genetic.geneticsolution import GeneticSolution
+from akkudoktoreos.optimization.simulation.solution import SimulationSolution
 from akkudoktoreos.utils.datetimeutil import to_datetime
 from akkudoktoreos.utils.visualize import (
     prepare_visualize,  # Import the new prepare_visualize
@@ -99,7 +99,7 @@ async def test_optimize(
     try:
         with file.open("r") as f_out:
             expected_data = json.load(f_out)
-            expected_result = GeneticSolution(**expected_data)
+            expected_result = SimulationSolution(**expected_data)
     except FileNotFoundError:
         pass
 

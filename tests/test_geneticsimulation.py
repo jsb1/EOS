@@ -2,11 +2,13 @@ import numpy as np
 import pytest
 
 from akkudoktoreos.config.configabc import TimeWindow, TimeWindowSequence
-from akkudoktoreos.devices.genetic.battery import Battery
-from akkudoktoreos.devices.genetic.homeappliance import HomeAppliance
-from akkudoktoreos.devices.genetic.inverter import Inverter
+from akkudoktoreos.optimization.simulation.devices import (
+    Battery,
+    HomeAppliance,
+    Inverter,
+)
 from akkudoktoreos.optimization.genetic.genetic import GeneticSimulation
-from akkudoktoreos.optimization.genetic.geneticdevices import (
+from akkudoktoreos.optimization.simulation.parameters import (
     ElectricVehicleParameters,
     HomeApplianceParameters,
     InverterParameters,
@@ -16,7 +18,7 @@ from akkudoktoreos.optimization.genetic.geneticparams import (
     GeneticEnergyManagementParameters,
     GeneticOptimizationParameters,
 )
-from akkudoktoreos.optimization.genetic.geneticsolution import GeneticSimulationResult
+from akkudoktoreos.optimization.simulation.solution import SimulationResult
 from akkudoktoreos.utils.datetimeutil import to_duration, to_time
 
 start_hour = 1
@@ -295,7 +297,7 @@ def test_simulation(genetic_simulation):
 
     # Check that the result is a dictionary
     assert isinstance(result, dict), "Result should be a dictionary."
-    assert GeneticSimulationResult(**result) is not None
+    assert SimulationResult(**result) is not None
 
     # Check the length of the main arrays
     assert len(result["Last_Wh_pro_Stunde"]) == 47, (

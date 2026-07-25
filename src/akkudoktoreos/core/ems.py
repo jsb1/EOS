@@ -21,7 +21,7 @@ from akkudoktoreos.optimization.genetic.genetic import GeneticOptimization
 from akkudoktoreos.optimization.genetic.geneticparams import (
     GeneticOptimizationParameters,
 )
-from akkudoktoreos.optimization.genetic.geneticsolution import GeneticSolution
+from akkudoktoreos.optimization.simulation.solution import SimulationSolution
 from akkudoktoreos.optimization.optimization import OptimizationSolution
 from akkudoktoreos.utils.datetimeutil import DateTime, to_datetime
 
@@ -70,7 +70,7 @@ class EnergyManagement(
 
     # Solution of the genetic algorithm of latest energy management run with optimization
     # For classic API
-    _genetic_solution: ClassVar[Optional[GeneticSolution]] = None
+    _genetic_solution: ClassVar[Optional[SimulationSolution]] = None
 
     # energy management lock (for energy management run)
     _run_lock: ClassVar[Lock] = Lock()
@@ -138,11 +138,11 @@ class EnergyManagement(
         return cls._optimization_solution
 
     @classmethod
-    def genetic_solution(cls) -> Optional[GeneticSolution]:
+    def genetic_solution(cls) -> Optional[SimulationSolution]:
         """Get the latest solution of the genetic algorithm.
 
         Returns:
-            Optional[GeneticSolution]: The latest solution of the genetic algorithm.
+            Optional[SimulationSolution]: The latest solution of the genetic algorithm.
         """
         return cls._genetic_solution
 

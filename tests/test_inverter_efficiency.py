@@ -17,9 +17,11 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 
-from akkudoktoreos.devices.genetic.battery import Battery
-from akkudoktoreos.devices.genetic.inverter import Inverter
-from akkudoktoreos.optimization.genetic.geneticdevices import (
+from akkudoktoreos.optimization.simulation.devices import (
+    Battery,
+    Inverter,
+)
+from akkudoktoreos.optimization.simulation.parameters import (
     InverterParameters,
     SolarPanelBatteryParameters,
 )
@@ -49,7 +51,7 @@ def _make_inverter(
         max_ac_charge_power_w=max_ac_charge_power_w,
     )
     with patch(
-        "akkudoktoreos.devices.genetic.inverter.get_eos_load_interpolator",
+        "akkudoktoreos.optimization.simulation.devices.get_eos_load_interpolator",
         return_value=mock_self_consumption_predictor,
     ):
         return Inverter(params, battery=mock_battery)

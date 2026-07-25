@@ -12,7 +12,7 @@ import pendulum
 from matplotlib.backends.backend_pdf import PdfPages
 
 from akkudoktoreos.core.coreabc import ConfigMixin, get_ems
-from akkudoktoreos.optimization.genetic.genetic import GeneticOptimizationParameters
+from akkudoktoreos.optimization.simulation.parameters import OptimizationParameters
 from akkudoktoreos.utils.datetimeutil import DateTime, to_datetime
 
 matplotlib.use(
@@ -435,7 +435,7 @@ class VisualizationReport(ConfigMixin):
 
 
 def prepare_visualize(
-    parameters: GeneticOptimizationParameters,
+    parameters: OptimizationParameters,
     results: dict,
     filename: str = "visualization_results.pdf",
     start_hour: int = 0,

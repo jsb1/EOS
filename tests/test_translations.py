@@ -6,7 +6,7 @@ import json
 from akkudoktoreos.optimization.genetic.geneticparams import (
     GeneticEnergyManagementParameters,
 )
-from akkudoktoreos.optimization.genetic.geneticsolution import GeneticSimulationResult
+from akkudoktoreos.optimization.simulation.solution import SimulationResult
 
 
 def test_genetic_params_german_input():
@@ -84,7 +84,7 @@ def test_simulation_result_translations():
         "akku_soc_pro_stunde": [80.0, 90.0],
         "Electricity_price": [0.0003, 0.0003],
     }
-    result = GeneticSimulationResult(**data_de)
+    result = SimulationResult(**data_de)
     json_output = json.loads(result.model_dump_json(by_alias=True))
 
     # Check English field names in output
