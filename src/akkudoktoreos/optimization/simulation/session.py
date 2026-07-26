@@ -95,6 +95,13 @@ class SimulationSession(PydanticBaseModel):
         default=None, json_schema_extra={"description": "TBD."}
     )
     inverter: Optional[Inverter] = Field(default=None, json_schema_extra={"description": "TBD."})
+    price_per_wh_battery: float = Field(
+        default=0.0,
+        ge=0,
+        json_schema_extra={
+            "description": "LCOS cost per Wh charged into the battery (battery degradation cost)."
+        },
+    )
 
     ac_charge_hours: Optional[NDArray[Shape["*"], float]] = Field(
         default=None, json_schema_extra={"description": "TBD"}
@@ -159,6 +166,7 @@ class SimulationSession(PydanticBaseModel):
         self.ev = ev
         self.home_appliance = home_appliance
         self.inverter = inverter
+        self.price_per_wh_battery = parameters.price_per_wh_battery
 
         # Initialize per-hour action arrays for the prediction horizon
         self.ac_charge_hours = np.full(self.prediction_hours, 0.0)

@@ -59,6 +59,9 @@ class SimulationContext:
     max_ac_charge_w: Optional[float] = None
     ac_charging_possible: bool = False
 
+    # Battery LCOS / degradation cost
+    price_per_wh_battery: float = 0.0
+
     # Home appliance
     home_appliance_enabled: bool = False
 
