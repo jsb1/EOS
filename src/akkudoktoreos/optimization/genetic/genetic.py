@@ -452,21 +452,27 @@ class GeneticOptimization(OptimizationBase):
         from akkudoktoreos.optimization.simulation.penalties import (
             ac_charge_break_even_penalty,
             battery_residual_value_penalty,
+            ev_residual_value_penalty,
             ev_soc_miss_penalty,
         )
 
-        # Battery residual value penalty
-        if self.simulation.battery:
+        # Battery residual value penalty (net change relative to initial SOC, valued at avg of grid and PV price)
+        if (
+            self.simulation.battery
+            and self.simulation.inverter
+            and self.simulation.elect_price_hourly is not None
+            and self.simulation.elect_revenue_per_hour_arr is not None
+        ):
             battery_energy_content = self.simulation.battery.current_energy_content()
-            dc_to_ac_eff = (
-                self.simulation.inverter.dc_to_ac_efficiency
-                if self.simulation.inverter
-                else 1.0
-            )
+            initial_soc_wh = (self.simulation.battery.initial_soc_percentage / 100.0) * self.simulation.battery.capacity_wh
+            dc_to_ac_eff = self.simulation.inverter.dc_to_ac_efficiency
             total_balance += battery_residual_value_penalty(
                 battery_energy_content_wh=battery_energy_content,
                 dc_to_ac_efficiency=dc_to_ac_eff,
                 price_per_wh_battery=parameters.ems.price_per_wh_battery,
+                initial_soc_wh=initial_soc_wh,
+                electricity_prices=self.simulation.elect_price_hourly,
+                feed_in_tariffs=self.simulation.elect_revenue_per_hour_arr,
             )
 
         # AC charging break-even penalty
@@ -503,8 +509,23 @@ class GeneticOptimization(OptimizationBase):
                 ac_penalty_factor=ac_penalty_factor,
             )
 
-        # EV SOC miss penalty
+        # EV penalties (residual value + SOC miss)
         if self.optimize_ev and parameters.ev and self.simulation.ev:
+            # EV residual value penalty: cost of energy invested in EV beyond initial SOC
+            if (
+                self.simulation.elect_price_hourly is not None
+                and self.simulation.elect_revenue_per_hour_arr is not None
+            ):
+                ev_energy_content = self.simulation.ev.current_energy_content()
+                ev_initial_soc_wh = (self.simulation.ev.initial_soc_percentage / 100.0) * self.simulation.ev.capacity_wh
+                total_balance += ev_residual_value_penalty(
+                    ev_energy_content_wh=ev_energy_content,
+                    initial_soc_wh=ev_initial_soc_wh,
+                    electricity_prices=self.simulation.elect_price_hourly,
+                    feed_in_tariffs=self.simulation.elect_revenue_per_hour_arr,
+                )
+
+            # EV SOC miss penalty: penalty for not reaching minimum SOC requirement
             try:
                 penalty_factor = self.config.optimization.genetic.penalties["ev_soc_miss"]
             except Exception:
@@ -551,9 +572,23 @@ class GeneticOptimization(OptimizationBase):
         logger.debug("Start optimize: {}", start_solution)
 
         # Insert the start solution into the population if provided
+        # Use DP solution as elite + mutated variants for diversity
         if start_solution is not None:
-            for _ in range(10):
-                population.insert(0, creator.Individual(start_solution))
+            # Insert original DP solution as elite individual
+            population.insert(0, creator.Individual(list(start_solution)))
+
+            # Generate mutated variants of DP solution for population diversity
+            # This helps GA explore around DP solution instead of being stuck
+            start_len = len(start_solution)
+            for i in range(9):
+                variant = list(start_solution)
+                # Mutate 5-15% of genes with small random changes
+                num_mutations = max(1, int(start_len * (0.05 + 0.1 * i / 9)))
+                for _ in range(num_mutations):
+                    pos = random.randint(0, start_len - 1)
+                    # Small perturbation: ±1 in gene value
+                    variant[pos] = max(0, min(100, variant[pos] + random.randint(-1, 1)))
+                population.insert(0, creator.Individual(variant))
 
         # Run the evolutionary algorithm
         pop, log = algorithms.eaMuPlusLambda(

@@ -14,24 +14,117 @@ def battery_residual_value_penalty(
     battery_energy_content_wh: float,
     dc_to_ac_efficiency: float,
     price_per_wh_battery: float,
+    initial_soc_wh: Optional[float] = None,
+    electricity_prices: Optional[np.ndarray] = None,
+    feed_in_tariffs: Optional[np.ndarray] = None,
 ) -> float:
-    """Compute the penalty for residual battery energy at end of simulation.
+    """Compute the penalty for net battery energy change at end of simulation.
 
-    The remaining energy in the battery at the end of the simulation horizon
-    represents stored value that was not used. This penalty deducts the
-    residual value from the total balance to encourage discharging before
-    the horizon ends.
+    Values battery energy based on the average of grid price and PV feed-in tariff.
+    Uses the LAST hour prices (end of horizon) since the penalty is applied at
+    the terminal state. This captures the true opportunity cost at that moment:
+    - Grid price: cost to buy replacement energy from grid at horizon end
+    - Feed-in tariff: revenue lost from not selling stored energy at horizon end
+
+    When battery energy changes relative to initial SOC:
+    - If end_soc > initial_soc: penalty for energy invested (negative)
+    - If end_soc < initial_soc: credit for stored energy used (positive)
 
     Args:
         battery_energy_content_wh: Current energy content of the battery in Wh.
         dc_to_ac_efficiency: DC-to-AC inverter efficiency (0.0 to 1.0).
-        price_per_wh_battery: Price per Wh of battery energy (currency/Wh).
+        price_per_wh_battery: Price per Wh of battery energy (LCOS). Used as fallback.
+        initial_soc_wh: Initial battery SOC in Wh.
+        electricity_prices: Array of electricity prices per hour.
+        feed_in_tariffs: Array of feed-in tariffs per hour.
 
     Returns:
         The penalty value to subtract from total balance (negative = cost).
+        Returns positive value (credit) if battery energy decreased.
     """
-    adjusted_energy = battery_energy_content_wh * dc_to_ac_efficiency
-    return -(adjusted_energy * price_per_wh_battery)
+    # Use prices at the LAST hour (end of horizon) to value battery energy
+    if (
+        electricity_prices is not None
+        and len(electricity_prices) > 0
+        and feed_in_tariffs is not None
+        and len(feed_in_tariffs) > 0
+    ):
+        # Last hour prices represent the value at horizon end
+        last_grid_price = float(electricity_prices[-1])
+        last_feed_in = float(feed_in_tariffs[-1])
+        avg_price = (last_grid_price + last_feed_in) / 2.0
+    elif electricity_prices is not None and len(electricity_prices) > 0:
+        last_grid_price = float(electricity_prices[-1])
+        avg_price = last_grid_price
+    else:
+        avg_price = price_per_wh_battery
+
+    if initial_soc_wh is not None:
+        # Value net change relative to initial SOC
+        net_change_wh = battery_energy_content_wh - initial_soc_wh
+        adjusted_energy = net_change_wh * dc_to_ac_efficiency
+    else:
+        # Backward compatible: value full end SOC if initial not provided
+        adjusted_energy = battery_energy_content_wh * dc_to_ac_efficiency
+
+    # Negative penalty = cost (energy invested), positive = credit (energy used)
+    return -(adjusted_energy * avg_price)
+
+
+def ev_residual_value_penalty(
+    ev_energy_content_wh: float,
+    initial_soc_wh: Optional[float],
+    electricity_prices: Optional[np.ndarray] = None,
+    feed_in_tariffs: Optional[np.ndarray] = None,
+    price_per_wh_fallback: float = 0.00025,
+) -> float:
+    """Compute the penalty for net EV energy change at end of simulation.
+
+    Values EV energy based on the average of grid price and PV feed-in tariff
+    at the last hour (end of horizon). This represents the opportunity cost:
+    energy stored in EV could have been bought from grid or generated from PV.
+
+    When EV energy changes relative to initial SOC:
+    - If end_soc > initial_soc: penalty for energy invested (negative)
+    - If end_soc < initial_soc: credit for stored energy used (positive)
+
+    Args:
+        ev_energy_content_wh: Current energy content of the EV battery in Wh.
+        initial_soc_wh: Initial EV SOC in Wh.
+        electricity_prices: Array of electricity prices per hour.
+        feed_in_tariffs: Array of feed-in tariffs per hour.
+        price_per_wh_fallback: Fallback price per Wh if no prices available.
+
+    Returns:
+        The penalty value to subtract from total balance (negative = cost).
+        Returns positive value (credit) if EV energy decreased.
+    """
+    # Use prices at the LAST hour (end of horizon) to value EV energy
+    if (
+        electricity_prices is not None
+        and len(electricity_prices) > 0
+        and feed_in_tariffs is not None
+        and len(feed_in_tariffs) > 0
+    ):
+        # Last hour prices represent the value at horizon end
+        last_grid_price = float(electricity_prices[-1])
+        last_feed_in = float(feed_in_tariffs[-1])
+        avg_price = (last_grid_price + last_feed_in) / 2.0
+    elif electricity_prices is not None and len(electricity_prices) > 0:
+        last_grid_price = float(electricity_prices[-1])
+        avg_price = last_grid_price
+    else:
+        avg_price = price_per_wh_fallback
+
+    # Value net change relative to initial SOC
+    if initial_soc_wh is not None:
+        net_change_wh = ev_energy_content_wh - initial_soc_wh
+    else:
+        # Backward compatible: value full end SOC if initial not provided
+        net_change_wh = ev_energy_content_wh
+
+    # Negative penalty = cost (energy invested), positive = credit (energy used)
+    return -(net_change_wh * avg_price)
 
 
 def ev_soc_miss_penalty(
@@ -42,9 +135,11 @@ def ev_soc_miss_penalty(
 ) -> float:
     """Compute the penalty for EV SOC missing target range.
 
-    If the EV state of charge is outside the acceptable range at the end
-    of the simulation, a penalty is applied proportional to the deviation
-    from the minimum SOC.
+    If the EV state of charge is below min_soc_percentage at the end of the
+    simulation, a penalty is applied proportional to the deviation.
+
+    Additionally, SOC above min_soc_percentage is penalized as an opportunity
+    cost (wasted charging energy) to avoid overcharging beyond the required minimum.
 
     Args:
         ev_soc_percentage: Current EV SOC as a percentage (0-100).
@@ -53,12 +148,13 @@ def ev_soc_miss_penalty(
         penalty_factor: Penalty multiplier per percentage point of deviation.
 
     Returns:
-        The penalty value (positive = additional cost). Returns 0 if SOC
-        is within the acceptable range.
+        The penalty value (positive = additional cost). Returns 0 only if SOC
+        equals min_soc_percentage exactly.
     """
-    if min_soc_percentage <= ev_soc_percentage <= max_soc_percentage:
-        return 0.0
-    return abs(min_soc_percentage - ev_soc_percentage) * penalty_factor
+    if ev_soc_percentage < min_soc_percentage:
+        # Penalty for not reaching minimum SOC
+        return abs(min_soc_percentage - ev_soc_percentage) * penalty_factor
+    return 0.0
 
 
 def ac_charge_break_even_penalty(
