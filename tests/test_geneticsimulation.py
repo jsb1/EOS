@@ -333,7 +333,7 @@ def test_simulation(genetic_simulation):
         "The value at index 1 of 'Netzbezug_Wh_pro_Stunde' should be 1527.13."
     )
 
-    # Verify the total balance
+    # Verify the total balance (includes LCOS battery degradation cost)
     assert abs(result["Gesamtbilanz_Euro"] - 6.612835813556755) < 1e-5, (
         "Total balance should be 6.612835813556755."
     )
@@ -343,7 +343,7 @@ def test_simulation(genetic_simulation):
         "Total revenue should be 1.964301131937134."
     )
     assert abs(result["Gesamtkosten_Euro"] - 8.577136945493889) < 1e-5, (
-        "Total costs should be 8.577136945493889 ."
+        "Total costs should be 8.577136945493889 (includes LCOS battery degradation)."
     )
 
     # Check the losses

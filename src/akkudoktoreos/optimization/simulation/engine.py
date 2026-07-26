@@ -54,6 +54,9 @@ class SimulationConfig:
     elect_revenue_per_hour: Optional[np.ndarray] = None
     temperature_forecast: Optional[np.ndarray] = None
 
+    # Battery LCOS / degradation cost
+    price_per_wh_battery: float = 0.0
+
 
 class EnergySimulationEngine:
     """Solver-agnostic energy simulation engine.
@@ -130,6 +133,7 @@ class EnergySimulationEngine:
             pv_prediction_wh=pv_prediction_wh,
             elect_price_hourly=elect_price_hourly,
             elect_revenue_per_hour=elect_revenue_per_hour,
+            price_per_wh_battery=ems.price_per_wh_battery,
         )
 
         return cls(devices=devices, sim_config=sim_config)
@@ -257,6 +261,9 @@ class EnergySimulationEngine:
         ctx.ev = devices.ev
         ctx.home_appliance = devices.home_appliance
         ctx.inverter = devices.inverter
+
+        # Battery LCOS / degradation cost
+        ctx.price_per_wh_battery = cfg.price_per_wh_battery
 
         # --- Validation ---
         if (
@@ -469,13 +476,15 @@ class EnergySimulationEngine:
                     consumption += ac_energy
                     energy_consumption_grid_actual += ac_energy
                     result.losses += battery_losses_actual + inverter_charge_losses
+                    # LCOS cost for battery charging (degradation)
+                    result.cost += battery_charged_energy_actual * ctx.price_per_wh_battery
 
         # --- Financial calculations ---
         result.consumption = consumption
         result.energy_feedin_grid = energy_feedin_grid_actual
         result.energy_consumption_grid = energy_consumption_grid_actual
         result.electricity_price = ctx.elect_price_hourly[hour]
-        result.cost = energy_consumption_grid_actual * ctx.elect_price_hourly[hour]
+        result.cost += energy_consumption_grid_actual * ctx.elect_price_hourly[hour]
         result.revenue = energy_feedin_grid_actual * ctx.elect_revenue_per_hour[hour]
 
         return result
