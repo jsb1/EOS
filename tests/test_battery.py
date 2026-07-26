@@ -244,7 +244,7 @@ def test_charge_energy_with_charge_factor(setup_pv_battery, wh, charge_factor, e
 
 @pytest.fixture
 def setup_car_battery():
-    from akkudoktoreos.optimization.genetic.geneticparams import (
+    from akkudoktoreos.optimization.simulation.parameters import (
         ElectricVehicleParameters,
     )
 

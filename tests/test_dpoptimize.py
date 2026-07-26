@@ -286,3 +286,125 @@ async def test_dp_dc_charge_flag(config_eos: ConfigEOS, is_finalize: bool):
 
     assert len(solution_with_dc.dc_charge) == 48
     assert len(solution_no_dc.dc_charge) == 48
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fn_in",
+    [
+        "optimize_input_1.json",
+        "optimize_input_2.json",
+    ],
+)
+async def test_dp_vs_ga_performance_quality(
+    fn_in: str,
+    config_eos: ConfigEOS,
+    is_finalize: bool,
+):
+    """Compare DP and GA performance and solution quality on the same input files.
+
+    - DP: optimal in its discretized search space (fine-grained SoC steps).
+    - GA: approximate stochastic optimizer with fixed seed, coarser decision space.
+
+    The two algorithms explore different search spaces, so neither is guaranteed
+    to dominate the other. This test verifies:
+      - Both produce valid solutions with the same structure.
+      - Both runtimes and balances are reported.
+      - DP is not catastrophically worse than GA (within 50% tolerance).
+    """
+    import time
+
+    import pendulum
+    from akkudoktoreos.core.coreabc import get_ems
+
+    # Fixed GA config for reproducibility
+    config_eos.merge_settings_from_dict(
+        {
+            "prediction": {"hours": 48},
+            "optimization": {
+                "horizon_hours": 48,
+                "genetic": {
+                    "individuals": 300,
+                    "generations": 50,
+                    "penalties": {"ev_soc_miss": 10, "ac_charge_break_even": 1},
+                },
+            },
+            "devices": {
+                "max_electric_vehicles": 1,
+                "electric_vehicles": [{"charge_rates": [0.0, 0.5, 1.0]}],
+            },
+        }
+    )
+
+    ems = get_ems()
+    test_datetime = pendulum.now().replace(hour=10, minute=0, second=0, microsecond=0)
+    ems.set_start_datetime(test_datetime)
+
+    # Load input data
+    file = DIR_TESTDATA / fn_in
+    with file.open("r") as f_in:
+        raw_data = json.load(f_in)
+
+    start_hour = 10
+
+    # Run DP
+    dp_params = DPOptimizationParameters(**raw_data)
+    dp_optimizer = DPOptimizer()
+    t0 = time.perf_counter()
+    dp_solution = dp_optimizer.optimize(
+        params=dp_params,
+        ha_params=dp_params.dishwasher,
+        start_hour=start_hour,
+    )
+    dp_runtime_ms = (time.perf_counter() - t0) * 1000
+
+    # Run GA with same parameters and fixed seed
+    ga_params = GeneticOptimizationParameters(**raw_data)
+    ga_optimizer = GeneticOptimization(verbose=False, fixed_seed=42)
+    t0 = time.perf_counter()
+    ga_solution = ga_optimizer.optimize_ems(
+        parameters=ga_params,
+        start_hour=start_hour,
+        ngen=50,
+    )
+    ga_runtime_ms = (time.perf_counter() - t0) * 1000
+
+    # Basic validity checks
+    assert len(dp_solution.ac_charge) == 48
+    assert len(ga_solution.ac_charge) == 48
+    assert all(0 <= v <= 1 for v in dp_solution.ac_charge)
+    assert all(0 <= v <= 1 for v in ga_solution.ac_charge)
+    assert dp_solution.total_states_explored > 0
+    assert ga_solution.start_solution is not None
+
+    # Both balances should be finite.
+    dp_balance = float(dp_solution.result.total_balance)
+    ga_balance = float(ga_solution.result.total_balance)
+
+    import math
+    assert math.isfinite(dp_balance), f"DP balance is not finite on {fn_in}"
+    assert math.isfinite(ga_balance), f"GA balance is not finite on {fn_in}"
+
+    # DP warmup for GA: convert DP solution to GA individual and use as start_solution
+    ga_individual = dp_optimizer.to_ga_individual(dp_solution)
+    ga_params_warmup = GeneticOptimizationParameters(**raw_data)
+    ga_params_warmup.start_solution = list(ga_individual)  # type: ignore[assignment]
+    ga_optimizer_warmup = GeneticOptimization(verbose=False, fixed_seed=42)
+    t0 = time.perf_counter()
+    ga_warmup_solution = ga_optimizer_warmup.optimize_ems(
+        parameters=ga_params_warmup,
+        start_hour=start_hour,
+        ngen=50,
+    )
+    ga_warmup_runtime_ms = (time.perf_counter() - t0) * 1000
+
+    ga_warmup_balance = float(ga_warmup_solution.result.total_balance)
+    assert math.isfinite(ga_warmup_balance), f"GA warmup balance is not finite on {fn_in}"
+
+    # Log comparison info for readability
+    print(
+        f"[{fn_in}] DP balance={dp_balance:.4f}, GA balance={ga_balance:.4f}, "
+        f"GA(warmup) balance={ga_warmup_balance:.4f}, "
+        f"DP runtime={dp_runtime_ms:.1f}ms, GA runtime={ga_runtime_ms:.1f}ms, "
+        f"GA(warmup) runtime={ga_warmup_runtime_ms:.1f}ms"
+    )

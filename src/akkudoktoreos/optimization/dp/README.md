@@ -8,7 +8,7 @@ Der DP-Solver findet die exakte optimale Lösung im diskretisierten State-Space 
 
 ### Features
 
-- **Konfigurierbare SoC-Resolution**: Default 2% (51 Level), 1% verfügbar (101 Level, ~1.3x langsamer)
+- **Konfigurierbare SoC-Resolution**: Default 1% (101 Level), 2% verfügbar (51 Level, ~1.3x schneller)
 - **Numba-JIT-Kompilierung**: `@njit(cache=True)` für C-Geschwindigkeit (~0.04s statt ~51s)
 - **Bellman-Optimalität**: Exakte Lösung im diskretisierten Raum via Backward-Pass
 - **EV-Optimierung**: EV-Ladeplanung als State/Action-Dimension

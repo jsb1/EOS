@@ -1,8 +1,8 @@
 """Dynamic Programming (DP) solver for energy optimization.
 
 Implements Bellman optimality for discrete-state energy management with:
-- Battery SoC discretization (2% resolution → 51 levels)
-- EV SoC discretization (2% resolution → 51 levels)
+- Battery SoC discretization (1% resolution → 101 levels)
+- EV SoC discretization (1% resolution → 101 levels)
 - Home appliance scheduling
 - Terminal penalties (battery residual value, EV SoC miss, AC charge break-even)
 - GA parity features (DC charge flag, worst-case mode, EV optimization check)

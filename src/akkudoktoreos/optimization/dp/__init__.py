@@ -4,7 +4,7 @@ This module provides a DP-based optimizer that finds the globally optimal
 energy management policy via Bellman optimality over a discretized SoC space.
 
 Features:
-- 2% SoC resolution (51 discrete levels) by default
+- 1% SoC resolution (101 discrete levels) by default
 - Battery + EV + Home Appliance optimization
 - Full GA parity (charge rates, DC flag, visualization, worst-case mode)
 - DP-as-GA-warmup (HYBRID mode)

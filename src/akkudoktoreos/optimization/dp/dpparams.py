@@ -15,7 +15,7 @@ from akkudoktoreos.optimization.simulation.parameters import (
 class DPOptimizationParameters(OptimizationParameters):
     """DP algorithm optimisation parameters.
 
-    Extends the solver-agnostic :class:`OptimizationParameters` with DP-specific
+    Extends the solver-agnostic `OptimizationParameters` with DP-specific
     config (SoC resolution, charge rates handling).
     """
 
@@ -23,7 +23,7 @@ class DPOptimizationParameters(OptimizationParameters):
     async def _prepare_solver_config(cls) -> None:
         """Set DP-specific config defaults."""
         # DP uses its own resolution parameter; no population/generation config needed.
-        logger.info("DP solver config prepared with 2% SoC resolution (51 steps).")
+        logger.info("DP solver config prepared with 1% SoC resolution (101 steps).")
 
     @classmethod
     async def prepare(cls) -> "Optional[DPOptimizationParameters]":

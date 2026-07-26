@@ -29,7 +29,7 @@ GeneticEnergyManagementParameters = EnergyManagementParameters
 class GeneticOptimizationParameters(OptimizationParameters):
     """Genetic algorithm optimisation parameters.
 
-    Extends the solver-agnostic :class:`OptimizationParameters` with GA-specific
+    Extends the solver-agnostic `OptimizationParameters` with GA-specific
     config defaults (individuals, generations, penalties).
     """
 
