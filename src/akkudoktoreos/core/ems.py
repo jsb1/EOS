@@ -21,6 +21,8 @@ from akkudoktoreos.optimization.genetic.genetic import GeneticOptimization
 from akkudoktoreos.optimization.genetic.geneticparams import (
     GeneticOptimizationParameters,
 )
+from akkudoktoreos.optimization.dp.dpoptimizer import DPOptimizer
+from akkudoktoreos.optimization.dp.dpparams import DPOptimizationParameters
 from akkudoktoreos.optimization.simulation.solution import SimulationSolution
 from akkudoktoreos.optimization.optimization import OptimizationSolution
 from akkudoktoreos.utils.datetimeutil import DateTime, to_datetime
@@ -174,6 +176,8 @@ class EnergyManagement(
             algorithm (str, optional):
                 The algorithm to use. Must be one of:
                 - "GENETIC": Optimization uses the `GENETIC` optimization algorithm.
+                - "DP": Optimization uses the `DP` (Dynamic Programming) algorithm.
+                - "HYBRID": DP is used as GA warmup (DP solution seeds GA population).
 
                 Defaults to the algorithm defined in the current configuration.
             genetic_parameters (GeneticOptimizationParameters, optional): The
@@ -286,11 +290,87 @@ class EnergyManagement(
                             ngen=genetic_individuals,
                         ),
                     )
+                    logger.info("GENETIC optimization completed.")
 
                 except Exception:
                     logger.exception("Energy management optimization failed.")
                     EnergyManagement._stage = EnergyManagementStage.IDLE
                     return
+
+            elif algorithm == "DP" or algorithm == "HYBRID":
+                # Prepare DP optimization parameters
+                logger.info("Starting DP optimization parameter preparation.")
+                dp_parameters = await DPOptimizationParameters.prepare()
+                if dp_parameters is None:
+                    logger.error(
+                        "Energy management run canceled. Could not prepare DP optimisation parameters."
+                    )
+                    EnergyManagement._stage = EnergyManagementStage.IDLE
+                    return
+
+                if EnergyManagement._start_datetime is None:
+                    raise RuntimeError("Start datetime not set.")
+
+                # Run DP optimization (CPU-bound → offload)
+                try:
+                    dp_optimizer = DPOptimizer()
+                    loop = get_running_loop()
+                    start_hour = EnergyManagement._start_datetime.hour
+                    dp_solution = await loop.run_in_executor(
+                        None,
+                        lambda: dp_optimizer.optimize(
+                            params=dp_parameters,
+                            ha_params=dp_parameters.dishwasher,
+                            start_hour=start_hour,
+                            optimize_ev=self.config.optimization.optimize_ev,
+                        ),
+                    )
+
+                    # Store DP solution
+                    EnergyManagement._genetic_solution = dp_solution
+                    logger.info("DP optimization completed.")
+
+                    # HYBRID mode: use DP solution as GA warmup
+                    if algorithm == "HYBRID":
+                        logger.info("HYBRID mode: using DP solution as GA warmup.")
+                        ga_individual = dp_optimizer.to_ga_individual(dp_solution)
+
+                        # Prepare GA parameters
+                        genetic_parameters = await GeneticOptimizationParameters.prepare()
+                        if genetic_parameters is None:
+                            logger.warning("Could not prepare GA parameters for HYBRID mode. Using DP solution only.")
+                        else:
+                            genetic_individuals = self.config.optimization.genetic.individuals
+                            genetic_seed = self.config.optimization.genetic.seed
+
+                            try:
+                                ga_optimization = GeneticOptimization(
+                                    verbose=bool(self.config.server.verbose),
+                                    fixed_seed=genetic_seed,
+                                )
+                                ga_solution = await loop.run_in_executor(
+                                    None,
+                                    lambda: ga_optimization.optimize_ems(
+                                        start_hour=start_hour,
+                                        parameters=cast(GeneticOptimizationParameters, genetic_parameters),
+                                        ngen=genetic_individuals,
+                                        warmup_individual=ga_individual,
+                                    ),
+                                )
+                                # Use GA solution if better, otherwise keep DP
+                                EnergyManagement._genetic_solution = ga_solution
+                                logger.info("HYBRID optimization completed (GA refined DP solution).")
+                            except Exception:
+                                logger.exception("HYBRID GA refinement failed. Using DP solution.")
+                                EnergyManagement._genetic_solution = dp_solution
+
+                except Exception:
+                    logger.exception("DP optimization failed.")
+                    EnergyManagement._stage = EnergyManagementStage.IDLE
+                    return
+
+                # Use DP solution for both DP and HYBRID modes
+                solution = EnergyManagement._genetic_solution
 
             else:
                 logger.error(f"Unknown optimization algorithm: '{algorithm}'. Skipping.")
@@ -304,77 +384,19 @@ class EnergyManagement(
                 optimization_duration.total_seconds(),
             )
 
-            logger.debug(
-                "Energy management optimization solution:\n{}",
-                EnergyManagement._optimization_solution,
-            )
-            logger.debug("Energy management plan:\n{}", EnergyManagement._plan)
-
-            # --- Control dispatch by adapters ---
-            EnergyManagement._stage = EnergyManagementStage.CONTROL_DISPATCH
-
-            # Make genetic solution public
+            # --- Publish solution ---
             EnergyManagement._genetic_solution = solution
-
-            # Make optimization solution public
             EnergyManagement._optimization_solution = await solution.optimization_solution()
-
-            # Make plan public
             EnergyManagement._plan = solution.energy_management_plan()
 
             logger.debug(
                 "Energy management genetic solution:\n{}", EnergyManagement._genetic_solution
             )
-
-            if genetic_parameters is None:
-                genetic_parameters = await GeneticOptimizationParameters.prepare()
-
-            if not genetic_parameters:
-                logger.error("Energy management run canceled. Could not prepare parameters.")
-                EnergyManagement._stage = EnergyManagementStage.IDLE
-                return
-
-            EnergyManagement._stage = EnergyManagementStage.OPTIMIZATION
-
-            if genetic_individuals is None:
-                genetic_individuals = self.config.optimization.genetic.individuals
-            if genetic_seed is None:
-                genetic_seed = self.config.optimization.genetic.seed
-
-            if EnergyManagement._start_datetime is None:
-                raise RuntimeError("Start datetime not set.")
-
-            # --- Optimization (CPU-bound → MUST offload) ---
-            try:
-                optimization = GeneticOptimization(
-                    verbose=bool(self.config.server.verbose),
-                    fixed_seed=genetic_seed,
-                )
-
-                loop = get_running_loop()
-                start_hour = EnergyManagement._start_datetime.hour
-                solution = await loop.run_in_executor(
-                    None,
-                    lambda: optimization.optimize_ems(
-                        start_hour=start_hour,
-                        parameters=genetic_parameters,
-                        ngen=genetic_individuals,
-                    ),
-                )
-
-            except Exception:
-                logger.exception("Energy management optimization failed.")
-                EnergyManagement._stage = EnergyManagementStage.IDLE
-                return
-
-            EnergyManagement._genetic_solution = solution
-            EnergyManagement._optimization_solution = await solution.optimization_solution()
-            EnergyManagement._plan = solution.energy_management_plan()
-
-            logger.debug("Genetic solution:\n{}", EnergyManagement._genetic_solution)
-            logger.debug("Optimization solution:\n{}", EnergyManagement._optimization_solution)
-            logger.debug("Plan:\n{}", EnergyManagement._plan)
-            logger.info("Energy management run done (optimization updated)")
+            logger.debug(
+                "Energy management optimization solution:\n{}",
+                EnergyManagement._optimization_solution,
+            )
+            logger.debug("Energy management plan:\n{}", EnergyManagement._plan)
 
             # --- Dispatch control by adapters ---
             EnergyManagement._stage = EnergyManagementStage.CONTROL_DISPATCH
